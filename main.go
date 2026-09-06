@@ -26,6 +26,11 @@ type PairingResponse struct {
 	Code string `json:"code"`
 }
 
+// Socket.io Payload Structure Parser
+type SessionPayload struct {
+	Session string `json:"session"`
+}
+
 // Koyeb Health Check-നു വേണ്ടി റൺ ചെയ്യുന്ന HTTP Server
 func startWebServer() {
 	port := getEnv("PORT", "8080")
@@ -40,6 +45,7 @@ func startWebServer() {
 	}
 }
 
+// WebSocket listener for receiving session
 func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
 	wsURL := "wss://heroku-session.raganork.site/socket.io/?EIO=4&transport=websocket"
 
@@ -56,8 +62,20 @@ func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
 			break
 		}
 
-		if strings.Contains(string(message), "session-received") {
-			msg := tgbotapi.NewMessage(chatID, "✅ *Session Received*\n\n📋 Session fetched successfully!")
+		msgStr := string(message)
+
+		// Check if payload contains 'session-received' event
+		if strings.Contains(msgStr, "session-received") {
+			sessionData := extractSession(msgStr)
+
+			var text string
+			if sessionData != "" {
+				text = fmt.Sprintf("✅ *Session Received*\n\n🔐 `%s`\n\n📋 Copy this", sessionData)
+			} else {
+				text = "✅ *Session Received*\n\n📋 Session generated successfully! Check your database."
+			}
+
+			msg := tgbotapi.NewMessage(chatID, text)
 			msg.ParseMode = "Markdown"
 			bot.Send(msg)
 			break
@@ -65,8 +83,24 @@ func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
 	}
 }
 
+// Helper to parse session string from socket.io raw text packet
+func extractSession(raw string) string {
+	startIdx := strings.Index(raw, "{")
+	if startIdx == -1 {
+		return ""
+	}
+	jsonStr := raw[startIdx:]
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &data); err == nil {
+		if sessionVal, ok := data["session"].(string); ok {
+			return sessionVal
+		}
+	}
+	return ""
+}
+
 func main() {
-	// BOT_TOKEN Environment Variable-ൽ നിന്ന് എടുക്കുന്നു
 	botToken := os.Getenv("BOT_TOKEN")
 	if botToken == "" {
 		log.Fatal("❌ ERROR: BOT_TOKEN environment variable is not set!")
@@ -117,6 +151,7 @@ func main() {
 		}
 
 		go func(p string, cID int64) {
+			// Start listening for session on socket in background
 			go listenWebSocket(bot, cID)
 
 			cleanPhone := strings.TrimPrefix(p, "+")
