@@ -1,0 +1,4 @@
+github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1 h1:P3KsiA2R1B3P8L3822qS7vCilf/I39m50S5eBsnjMhc=
+github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1/go.mod h1:Cipf8M4J34R3B1X8E42LAnS13184I22M3wP2A9n93iY=
+github.com/gorilla/websocket v1.5.1 h1:L3TsR98I3C4A5AUn+2cIn3/1L38JilT2fT4I9/12P9s=
+github.com/gorilla/websocket v1.5.1/go.mod h1:xT7S15o/U2w0A5vY8L4o3+wK4x/i1Dk6c295q08iA3I=
