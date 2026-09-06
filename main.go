@@ -12,8 +12,11 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
+
+const jwtSecret = "myKeyAan"
 
 func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
@@ -26,17 +29,21 @@ type PairingResponse struct {
 	Code string `json:"code"`
 }
 
-// Socket.io Payload Structure Parser
-type SessionPayload struct {
-	Session string `json:"session"`
+// JWT Token Generator
+func generateToken() (string, error) {
+	claims := jwt.MapClaims{
+		"exp": time.Now().Add(time.Hour * 1).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret))
 }
 
-// Koyeb Health Check-നു വേണ്ടി റൺ ചെയ്യുന്ന HTTP Server
+// Web Server for Render / Koyeb Health Check
 func startWebServer() {
 	port := getEnv("PORT", "8080")
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "🤖 Bot is running smoothly on Koyeb!")
+		fmt.Fprintln(w, "🤖 Bot is running smoothly!")
 	})
 
 	log.Printf("🌐 Web server active on port %s\n", port)
@@ -45,9 +52,10 @@ func startWebServer() {
 	}
 }
 
-// WebSocket listener for receiving session
+// WebSocket Listener for Session
 func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
-	wsURL := "wss://heroku-session.raganork.site/socket.io/?EIO=4&transport=websocket"
+	// Updated active Socket domain
+	wsURL := "wss://session.rgnk.site/socket.io/?EIO=4&transport=websocket"
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
@@ -64,7 +72,6 @@ func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
 
 		msgStr := string(message)
 
-		// Check if payload contains 'session-received' event
 		if strings.Contains(msgStr, "session-received") {
 			sessionData := extractSession(msgStr)
 
@@ -72,7 +79,7 @@ func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
 			if sessionData != "" {
 				text = fmt.Sprintf("✅ *Session Received*\n\n🔐 `%s`\n\n📋 Copy this", sessionData)
 			} else {
-				text = "✅ *Session Received*\n\n📋 Session generated successfully! Check your database."
+				text = "✅ *Session Received*\n\n📋 Session fetched successfully!"
 			}
 
 			msg := tgbotapi.NewMessage(chatID, text)
@@ -83,7 +90,7 @@ func listenWebSocket(bot *tgbotapi.BotAPI, chatID int64) {
 	}
 }
 
-// Helper to parse session string from socket.io raw text packet
+// Helper to extract session string from raw payload
 func extractSession(raw string) string {
 	startIdx := strings.Index(raw, "{")
 	if startIdx == -1 {
@@ -151,7 +158,13 @@ func main() {
 		}
 
 		go func(p string, cID int64) {
-			// Start listening for session on socket in background
+			token, err := generateToken()
+			if err != nil {
+				bot.Send(tgbotapi.NewMessage(cID, "❌ Error generating authorization token"))
+				return
+			}
+
+			// Background Socket Listener
 			go listenWebSocket(bot, cID)
 
 			cleanPhone := strings.TrimPrefix(p, "+")
@@ -161,16 +174,17 @@ func main() {
 
 			req, err := http.NewRequest("POST", "https://session.rgnk.site/api/get-pairingcode", bytes.NewBuffer(reqBody))
 			if err != nil {
-				bot.Send(tgbotapi.NewMessage(cID, "❌ Error creating request"))
+				bot.Send(tgbotapi.NewMessage(cID, "❌ Error creating pairing request"))
 				return
 			}
 
+			req.Header.Set("Authorization", "Bearer "+token)
 			req.Header.Set("Content-Type", "application/json")
 
 			client := &http.Client{Timeout: 15 * time.Second}
 			resp, err := client.Do(req)
 			if err != nil {
-				bot.Send(tgbotapi.NewMessage(cID, "❌ API request failed"))
+				bot.Send(tgbotapi.NewMessage(cID, "❌ Pairing API request failed"))
 				return
 			}
 			defer resp.Body.Close()
