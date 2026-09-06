@@ -2,14 +2,12 @@ FROM golang:1.21-alpine
 
 WORKDIR /app
 
-# Go modules ഡൗൺലോഡ് ചെയ്യാൻ
-COPY go.mod ./
-RUN go mod download || true
-
+# All files copy ചെയ്യുക
 COPY . .
 
-# App ബിൽഡ് ചെയ്യൽ
-RUN go build -o bot main.go
+# Dependencies auto-download ചെയ്ത് ബിൽഡ് ചെയ്യുക
+RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux go build -o bot main.go
 
 EXPOSE 8080
 
